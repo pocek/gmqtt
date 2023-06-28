@@ -217,12 +217,11 @@ class Client(MqttPackageHandler, SubscriptionsHandler):
         self._port = port
         self._ssl = ssl
         self._keepalive = keepalive
+        self._version = version
         self._is_active = True
 
-        MQTTProtocol.proto_ver = version
-
         self._connection = await self._create_connection(
-            host, port=self._port, ssl=self._ssl, clean_session=self._clean_session, keepalive=keepalive)
+            host, port=self._port, ssl=self._ssl, clean_session=self._clean_session, keepalive=keepalive, version=version)
 
         await self._connection.auth(self._client_id, self._username, self._password, will_message=self._will_message,
                                     **self._connect_properties)
@@ -233,11 +232,13 @@ class Client(MqttPackageHandler, SubscriptionsHandler):
         if raise_exc and self._error:
             raise self._error
 
-    async def _create_connection(self, host, port, ssl, clean_session, keepalive):
+    async def _create_connection(self, host, port, ssl, clean_session, keepalive, version):
         # important for reconnects, make sure u know what u are doing if wanna change :(
         self._exit_reconnecting_state()
         self._clear_topics_aliases()
-        connection = await MQTTConnection.create_connection(host, port, ssl, clean_session, keepalive, logger=self._logger)
+        if version < MQTTv50:
+            self._optimistic_acknowledgement = True
+        connection = await MQTTConnection.create_connection(host, port, ssl, clean_session, keepalive, version, logger=self._logger)
         connection.set_handler(self)
         return connection
 
@@ -264,7 +265,8 @@ class Client(MqttPackageHandler, SubscriptionsHandler):
             await asyncio.sleep(self._config['reconnect_delay'])
         try:
             self._connection = await self._create_connection(self._host, self._port, ssl=self._ssl,
-                                                             clean_session=False, keepalive=self._keepalive)
+                                                             clean_session=False, keepalive=self._keepalive,
+                                                             version=self._version)
         except OSError as exc:
             self.failed_connections += 1
             self._logger.warning("[CAN'T RECONNECT] %s", self.failed_connections)
@@ -305,4 +307,4 @@ class Client(MqttPackageHandler, SubscriptionsHandler):
     @property
     def protocol_version(self):
         return self._connection._protocol.proto_ver \
-            if self._connection is not None else MQTTv50
+            if self._connection is not None else self._version

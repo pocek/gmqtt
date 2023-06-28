@@ -162,20 +162,16 @@ class EventCallback(object):
 
 
 class MqttPackageHandler(EventCallback):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, optimistic_acknowledgement, **kwargs):
         super(MqttPackageHandler, self).__init__(*args, **kwargs)
         self._messages_in = {}
         self._handler_cache = {}
         self._error = None
         self._connection = None
         self._server_topics_aliases = {}
+        self._optimistic_acknowledgement = optimistic_acknowledgement
 
         self._id_generator = IdGenerator(max=kwargs.get('receive_maximum', 65535))
-
-        if self.protocol_version == MQTTv50:
-            self._optimistic_acknowledgement = kwargs.get('optimistic_acknowledgement', True)
-        else:
-            self._optimistic_acknowledgement = True
 
         self._logger = kwargs.get('logger', logging.getLogger(__name__))
 
@@ -269,7 +265,7 @@ class MqttPackageHandler(EventCallback):
             self.failed_connections += 1
             if result == 1 and self.protocol_version == MQTTv50:
                 self._logger.info('[CONNACK] Downgrading to MQTT 3.1 protocol version')
-                MQTTProtocol.proto_ver = MQTTv311
+                self._version = MQTTv311
                 future = asyncio.ensure_future(self.reconnect(delay=True))
                 future.add_done_callback(self._handle_exception_in_future)
                 return
